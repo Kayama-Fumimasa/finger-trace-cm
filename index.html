@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>手指划过的厘米 / Auto Device Estimate</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 18%, #1c1c1c 0%, #070707 50%, #020202 100%);
+      color: #f7f3ea;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      touch-action: none;
+    }
+
+    .panel {
+      position: fixed;
+      top: calc(16px + env(safe-area-inset-top));
+      left: 16px;
+      right: 16px;
+      padding: 16px 18px;
+      border: 1px solid rgba(247, 243, 234, 0.16);
+      border-radius: 24px;
+      background: rgba(12, 12, 12, 0.62);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      pointer-events: none;
+    }
+
+    .label {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      color: rgba(247, 243, 234, 0.52);
+      margin-bottom: 8px;
+    }
+
+    .number-line {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    #cm {
+      font-size: clamp(54px, 18vw, 86px);
+      font-weight: 250;
+      line-height: 0.92;
+      letter-spacing: -0.07em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .unit {
+      font-size: 20px;
+      color: rgba(247, 243, 234, 0.56);
+    }
+
+    #status {
+      margin-top: 10px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: rgba(247, 243, 234, 0.60);
+    }
+
+    .small {
+      margin-top: 6px;
+      font-size: 11px;
+      line-height: 1.45;
+      color: rgba(247, 243, 234, 0.38);
+    }
+
+    #reset {
+      position: fixed;
+      right: 18px;
+      bottom: calc(86px + env(safe-area-inset-bottom));
+      border: 1px solid rgba(247, 243, 234, 0.16);
+      border-radius: 999px;
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.08);
+      color: #f7f3ea;
+      font: inherit;
+      font-size: 13px;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #reset:active { transform: scale(0.98); }
+
+    .caption {
+      position: fixed;
+      left: 18px;
+      right: 18px;
+      bottom: calc(18px + env(safe-area-inset-bottom));
+      font-size: 11px;
+      line-height: 1.55;
+      color: rgba(247, 243, 234, 0.44);
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="stage"></canvas>
+
+  <section class="panel">
+    <div class="label">
+      <span>TOUCH TRACE / 触摸轨迹</span>
+      <span id="quality">AUTO</span>
+    </div>
+    <div class="number-line">
+      <div id="cm">0.00</div>
+      <div class="unit">cm</div>
+    </div>
+    <div id="status">用手指在屏幕上划动。网页会自动根据设备屏幕参数估算厘米。</div>
+    <div class="small" id="deviceInfo">正在读取屏幕参数…</div>
+  </section>
+
+  <button id="reset" type="button">清除</button>
+
+  <div class="caption">
+    免校准估算：根据 CSS 屏幕尺寸、DPR、候选设备表和 PPI 推算。若多个设备共享同一屏幕签名，仍会有不可消除误差。
+  </div>
+
+  <script>
+    const canvas = document.getElementById("stage");
+    const ctx = canvas.getContext("2d");
+    const cmText = document.getElementById("cm");
+    const statusText = document.getElementById("status");
+    const resetButton = document.getElementById("reset");
+    const deviceInfo = document.getElementById("deviceInfo");
+    const quality = document.getElementById("quality");
+
+    // Device table: logical CSS size in portrait, actual physical pixels, PPI.
+    // Conversion uses physical width/height and logical CSS dimensions, not the generic 96px/in rule.
+    const IOS_DEVICES = [
+      { name: "iPhone 16 Pro Max / 15 Pro Max / 15 Plus / 14 Pro Max", cssW: 430, cssH: 932, physW: 1290, physH: 2796, ppi: 460, dpr: 3 },
+      { name: "iPhone 16 Plus / 14 Plus / 13 Pro Max / 12 Pro Max", cssW: 428, cssH: 926, physW: 1284, physH: 2778, ppi: 458, dpr: 3 },
+      { name: "iPhone 16 Pro / 16 / 15 Pro / 15 / 14 Pro", cssW: 393, cssH: 852, physW: 1179, physH: 2556, ppi: 460, dpr: 3 },
+      { name: "iPhone 16e / 14 / 13 / 13 Pro / 12 / 12 Pro", cssW: 390, cssH: 844, physW: 1170, physH: 2532, ppi: 460, dpr: 3 },
+      { name: "iPhone 13 mini / 12 mini", cssW: 375, cssH: 812, physW: 1080, physH: 2340, ppi: 476, dpr: 3 },
+      { name: "iPhone 11 Pro / XS / X", cssW: 375, cssH: 812, physW: 1125, physH: 2436, ppi: 458, dpr: 3 },
+      { name: "iPhone 11 / XR", cssW: 414, cssH: 896, physW: 828, physH: 1792, ppi: 326, dpr: 2 },
+      { name: "iPhone 8 Plus / 7 Plus / 6s Plus / 6 Plus", cssW: 414, cssH: 736, physW: 1080, physH: 1920, ppi: 401, dpr: 3 },
+      { name: "iPhone SE 3 / SE 2 / 8 / 7 / 6s / 6", cssW: 375, cssH: 667, physW: 750, physH: 1334, ppi: 326, dpr: 2 },
+      { name: "iPhone SE 1 / 5s / 5", cssW: 320, cssH: 568, physW: 640, physH: 1136, ppi: 326, dpr: 2 }
+    ];
+
+    let drawing = false;
+    let lastPoint = null;
+    let totalCssPx = 0;
+    let activePointerId = null;
+    let estimate = estimateCmPerCssPx();
+
+    function round2(n) { return Math.round(n * 100) / 100; }
+
+    function cmPerCssPxFromDevice(device) {
+      const widthCm = device.physW / device.ppi * 2.54;
+      const heightCm = device.physH / device.ppi * 2.54;
+      const byWidth = widthCm / device.cssW;
+      const byHeight = heightCm / device.cssH;
+      return (byWidth + byHeight) / 2;
+    }
+
+    function median(values) {
+      const sorted = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+
+    function estimateCmPerCssPx() {
+      const sw = Math.round(window.screen.width);
+      const sh = Math.round(window.screen.height);
+      const cssW = Math.min(sw, sh);
+      const cssH = Math.max(sw, sh);
+      const dpr = round2(window.devicePixelRatio || 1);
+      const ua = navigator.userAgent || "";
+      const isLikelyIPhone = /iPhone/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1 && cssW < 600);
+
+      const exact = IOS_DEVICES.filter(d =>
+        d.cssW === cssW &&
+        d.cssH === cssH &&
+        Math.abs(d.dpr - dpr) < 0.15
+      );
+
+      if (exact.length > 0) {
+        const cms = exact.map(cmPerCssPxFromDevice);
+        const spread = Math.max(...cms) - Math.min(...cms);
+        return {
+          cmPerCssPx: median(cms),
+          method: exact.length === 1 ? "exact-device-signature" : "ambiguous-device-signature",
+          confidence: spread < 0.00035 ? "高" : "中",
+          deviceName: exact.map(d => d.name).join(" / "),
+          candidates: exact.length,
+          spreadCmPer100CssPx: spread * 100,
+          cssW, cssH, dpr, isLikelyIPhone
+        };
+      }
+
+      // Nearest iPhone signature fallback.
+      if (isLikelyIPhone) {
+        let best = IOS_DEVICES[0];
+        let bestScore = Infinity;
+        for (const d of IOS_DEVICES) {
+          const score = Math.abs(d.cssW - cssW) + Math.abs(d.cssH - cssH) + Math.abs(d.dpr - dpr) * 100;
+          if (score < bestScore) {
+            best = d;
+            bestScore = score;
+          }
+        }
+        return {
+          cmPerCssPx: cmPerCssPxFromDevice(best),
+          method: "nearest-iphone-signature",
+          confidence: bestScore < 8 ? "中" : "低",
+          deviceName: "接近：" + best.name,
+          candidates: 1,
+          spreadCmPer100CssPx: 0,
+          cssW, cssH, dpr, isLikelyIPhone
+        };
+      }
+
+      // Conservative generic fallback: physical pixels per CSS px divided by a common phone PPI.
+      // This is not as good as device matching, but is less wrong than 96px/in on many phones.
+      const assumedPpi = dpr >= 3 ? 460 : 326;
+      return {
+        cmPerCssPx: dpr / assumedPpi * 2.54,
+        method: "generic-dpr-ppi-fallback",
+        confidence: "低",
+        deviceName: `通用估算：DPR ${dpr}, assumed PPI ${assumedPpi}`,
+        candidates: 0,
+        spreadCmPer100CssPx: 0,
+        cssW, cssH, dpr, isLikelyIPhone
+      };
+    }
+
+    function cssPxToCm(px) {
+      return px * estimate.cmPerCssPx;
+    }
+
+    function refreshDeviceInfo() {
+      estimate = estimateCmPerCssPx();
+      quality.textContent = `AUTO / ${estimate.confidence}`;
+      const pxPerCm = 1 / estimate.cmPerCssPx;
+      let note = `屏幕签名：${estimate.cssW}×${estimate.cssH} @${estimate.dpr}x｜${estimate.deviceName}｜1cm≈${pxPerCm.toFixed(1)} CSS px`;
+      if (estimate.method === "ambiguous-device-signature") {
+        note += `｜同签名候选：${estimate.candidates}，每 100 CSS px 最大差约 ${estimate.spreadCmPer100CssPx.toFixed(2)}cm`;
+      }
+      deviceInfo.textContent = note;
+      console.log("touch-trace-cm device estimate", estimate, {
+        screenWidth: window.screen.width,
+        screenHeight: window.screen.height,
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        visualViewportWidth: window.visualViewport?.width,
+        visualViewportHeight: window.visualViewport?.height,
+        dpr: window.devicePixelRatio,
+        platform: navigator.platform,
+        maxTouchPoints: navigator.maxTouchPoints,
+        userAgent: navigator.userAgent
+      });
+    }
+
+    function resizeCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.floor(window.innerWidth * dpr);
+      const h = Math.floor(window.innerHeight * dpr);
+      canvas.width = w;
+      canvas.height = h;
+      canvas.style.width = window.innerWidth + "px";
+      canvas.style.height = window.innerHeight + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      clearCanvas(false);
+      refreshDeviceInfo();
+    }
+
+    function clearCanvas(resetNumber = true) {
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      if (resetNumber) {
+        totalCssPx = 0;
+        cmText.textContent = "0.00";
+        statusText.textContent = "用手指在屏幕上划动。网页会自动根据设备屏幕参数估算厘米。";
+      }
+    }
+
+    function pointFromEvent(event) {
+      return { x: event.clientX, y: event.clientY, t: event.timeStamp };
+    }
+
+    function drawSegment(from, to) {
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.strokeStyle = "rgba(247, 243, 234, 0.16)";
+      ctx.lineWidth = 20;
+      ctx.shadowColor = "rgba(247, 243, 234, 0.25)";
+      ctx.shadowBlur = 26;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.strokeStyle = "rgba(247, 243, 234, 0.92)";
+      ctx.lineWidth = 5.5;
+      ctx.shadowBlur = 0;
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function updateNumber() {
+      const cm = cssPxToCm(totalCssPx);
+      cmText.textContent = cm.toFixed(2);
+    }
+
+    function addPoint(currentPoint) {
+      if (!lastPoint) {
+        lastPoint = currentPoint;
+        return;
+      }
+      const dx = currentPoint.x - lastPoint.x;
+      const dy = currentPoint.y - lastPoint.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance < 0.25) return;
+      totalCssPx += distance;
+      drawSegment(lastPoint, currentPoint);
+      lastPoint = currentPoint;
+    }
+
+    function coalescedEvents(event) {
+      if (typeof event.getCoalescedEvents === "function") {
+        const events = event.getCoalescedEvents();
+        if (events && events.length) return events;
+      }
+      return [event];
+    }
+
+    canvas.addEventListener("pointerdown", (event) => {
+      if (!event.isPrimary) return;
+      event.preventDefault();
+      activePointerId = event.pointerId;
+      canvas.setPointerCapture(activePointerId);
+      drawing = true;
+      totalCssPx = 0;
+      lastPoint = pointFromEvent(event);
+      clearCanvas(false);
+      updateNumber();
+      statusText.textContent = "正在记录：你的手指把一瞬间的触摸变成了一条可见的距离。";
+    }, { passive: false });
+
+    function handlePointerMove(event) {
+      if (!drawing || event.pointerId !== activePointerId) return;
+      event.preventDefault();
+      for (const e of coalescedEvents(event)) {
+        addPoint(pointFromEvent(e));
+      }
+      updateNumber();
+    }
+
+    canvas.addEventListener("pointermove", handlePointerMove, { passive: false });
+    if ("onpointerrawupdate" in window) {
+      canvas.addEventListener("pointerrawupdate", handlePointerMove, { passive: false });
+    }
+
+    function finishDrawing(event) {
+      if (!drawing || event.pointerId !== activePointerId) return;
+      event.preventDefault();
+      drawing = false;
+      activePointerId = null;
+      statusText.textContent = `记录结束。免校准估算精度：${estimate.confidence}。再次触摸屏幕会开始新的轨迹。`;
+    }
+
+    canvas.addEventListener("pointerup", finishDrawing, { passive: false });
+    canvas.addEventListener("pointercancel", finishDrawing, { passive: false });
+
+    resetButton.addEventListener("click", () => {
+      drawing = false;
+      activePointerId = null;
+      clearCanvas(true);
+    });
+
+    window.addEventListener("resize", resizeCanvas);
+    window.visualViewport?.addEventListener("resize", () => {
+      // Address bar changes can affect canvas size; device estimate still uses screen size.
+      resizeCanvas();
+    });
+
+    resizeCanvas();
+  </script>
+</body>
+</html>
