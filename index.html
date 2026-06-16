@@ -36,10 +36,10 @@
       transform: translateX(-50%);
       z-index: 10;
       font-family: Helvetica, "Helvetica Neue", Arial, sans-serif;
-      font-size: clamp(30px, 9vw, 56px);
+      font-size: clamp(22px, 6.2vw, 38px);
       font-weight: 400;
       line-height: 1;
-      letter-spacing: -0.055em;
+      letter-spacing: 0.015em;
       font-variant-numeric: tabular-nums;
       color: rgba(255, 255, 255, 0.94);
       pointer-events: none;
@@ -50,7 +50,7 @@
 
 <body>
   <canvas id="stage"></canvas>
-  <div id="distance">0cm</div>
+  <div id="distance">0.00cm</div>
 
   <script>
     const canvas = document.getElementById("stage");
@@ -202,9 +202,8 @@
 
     function updateNumber() {
       const cm = cssPxToCm(totalCssPx);
-      distanceText.textContent = `${Math.round(cm)}cm`;
+      distanceText.textContent = `${cm.toFixed(2)}cm`;
       // If you prefer one decimal place, use this instead:
-      // distanceText.textContent = `${cm.toFixed(1)}cm`;
     }
 
     function addPoint(currentPoint) {
