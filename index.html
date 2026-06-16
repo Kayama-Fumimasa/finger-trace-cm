@@ -3,17 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-  <title>手指划过的厘米 / Auto Device Estimate</title>
+  <title>Touch Trace CM</title>
   <style>
     :root { color-scheme: dark; }
+
     html, body {
       margin: 0;
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: radial-gradient(circle at 50% 18%, #1c1c1c 0%, #070707 50%, #020202 100%);
-      color: #f7f3ea;
-      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      background: #050505;
+      color: #ffffff;
+      font-family: Helvetica, "Helvetica Neue", Arial, sans-serif;
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
@@ -28,125 +29,36 @@
       touch-action: none;
     }
 
-    .panel {
+    #distance {
       position: fixed;
-      top: calc(16px + env(safe-area-inset-top));
-      left: 16px;
-      right: 16px;
-      padding: 16px 18px;
-      border: 1px solid rgba(247, 243, 234, 0.16);
-      border-radius: 24px;
-      background: rgba(12, 12, 12, 0.62);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      pointer-events: none;
-    }
-
-    .label {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      font-size: 10px;
-      letter-spacing: 0.16em;
-      color: rgba(247, 243, 234, 0.52);
-      margin-bottom: 8px;
-    }
-
-    .number-line {
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-
-    #cm {
-      font-size: clamp(54px, 18vw, 86px);
-      font-weight: 250;
-      line-height: 0.92;
-      letter-spacing: -0.07em;
+      top: calc(22px + env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      font-family: Helvetica, "Helvetica Neue", Arial, sans-serif;
+      font-size: clamp(30px, 9vw, 56px);
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: -0.055em;
       font-variant-numeric: tabular-nums;
-    }
-
-    .unit {
-      font-size: 20px;
-      color: rgba(247, 243, 234, 0.56);
-    }
-
-    #status {
-      margin-top: 10px;
-      font-size: 13px;
-      line-height: 1.45;
-      color: rgba(247, 243, 234, 0.60);
-    }
-
-    .small {
-      margin-top: 6px;
-      font-size: 11px;
-      line-height: 1.45;
-      color: rgba(247, 243, 234, 0.38);
-    }
-
-    #reset {
-      position: fixed;
-      right: 18px;
-      bottom: calc(86px + env(safe-area-inset-bottom));
-      border: 1px solid rgba(247, 243, 234, 0.16);
-      border-radius: 999px;
-      padding: 10px 14px;
-      background: rgba(255,255,255,0.08);
-      color: #f7f3ea;
-      font: inherit;
-      font-size: 13px;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    #reset:active { transform: scale(0.98); }
-
-    .caption {
-      position: fixed;
-      left: 18px;
-      right: 18px;
-      bottom: calc(18px + env(safe-area-inset-bottom));
-      font-size: 11px;
-      line-height: 1.55;
-      color: rgba(247, 243, 234, 0.44);
+      color: rgba(255, 255, 255, 0.94);
       pointer-events: none;
+      white-space: nowrap;
     }
   </style>
 </head>
 
 <body>
   <canvas id="stage"></canvas>
-
-  <section class="panel">
-    <div class="label">
-      <span>TOUCH TRACE / 触摸轨迹</span>
-      <span id="quality">AUTO</span>
-    </div>
-    <div class="number-line">
-      <div id="cm">0.00</div>
-      <div class="unit">cm</div>
-    </div>
-    <div id="status">用手指在屏幕上划动。网页会自动根据设备屏幕参数估算厘米。</div>
-    <div class="small" id="deviceInfo">正在读取屏幕参数…</div>
-  </section>
-
-  <button id="reset" type="button">清除</button>
-
-  <div class="caption">
-    免校准估算：根据 CSS 屏幕尺寸、DPR、候选设备表和 PPI 推算。若多个设备共享同一屏幕签名，仍会有不可消除误差。
-  </div>
+  <div id="distance">0cm</div>
 
   <script>
     const canvas = document.getElementById("stage");
     const ctx = canvas.getContext("2d");
-    const cmText = document.getElementById("cm");
-    const statusText = document.getElementById("status");
-    const resetButton = document.getElementById("reset");
-    const deviceInfo = document.getElementById("deviceInfo");
-    const quality = document.getElementById("quality");
+    const distanceText = document.getElementById("distance");
 
     // Device table: logical CSS size in portrait, actual physical pixels, PPI.
-    // Conversion uses physical width/height and logical CSS dimensions, not the generic 96px/in rule.
+    // This keeps the more accurate iPhone estimation from V2, but hides all diagnostic text.
     const IOS_DEVICES = [
       { name: "iPhone 16 Pro Max / 15 Pro Max / 15 Plus / 14 Pro Max", cssW: 430, cssH: 932, physW: 1290, physH: 2796, ppi: 460, dpr: 3 },
       { name: "iPhone 16 Plus / 14 Plus / 13 Pro Max / 12 Pro Max", cssW: 428, cssH: 926, physW: 1284, physH: 2778, ppi: 458, dpr: 3 },
@@ -166,7 +78,9 @@
     let activePointerId = null;
     let estimate = estimateCmPerCssPx();
 
-    function round2(n) { return Math.round(n * 100) / 100; }
+    function round2(n) {
+      return Math.round(n * 100) / 100;
+    }
 
     function cmPerCssPxFromDevice(device) {
       const widthCm = device.physW / device.ppi * 2.54;
@@ -198,20 +112,14 @@
       );
 
       if (exact.length > 0) {
-        const cms = exact.map(cmPerCssPxFromDevice);
-        const spread = Math.max(...cms) - Math.min(...cms);
         return {
-          cmPerCssPx: median(cms),
+          cmPerCssPx: median(exact.map(cmPerCssPxFromDevice)),
           method: exact.length === 1 ? "exact-device-signature" : "ambiguous-device-signature",
-          confidence: spread < 0.00035 ? "高" : "中",
-          deviceName: exact.map(d => d.name).join(" / "),
-          candidates: exact.length,
-          spreadCmPer100CssPx: spread * 100,
-          cssW, cssH, dpr, isLikelyIPhone
+          confidence: exact.length === 1 ? "high" : "medium",
+          cssW, cssH, dpr
         };
       }
 
-      // Nearest iPhone signature fallback.
       if (isLikelyIPhone) {
         let best = IOS_DEVICES[0];
         let bestScore = Infinity;
@@ -225,25 +133,17 @@
         return {
           cmPerCssPx: cmPerCssPxFromDevice(best),
           method: "nearest-iphone-signature",
-          confidence: bestScore < 8 ? "中" : "低",
-          deviceName: "接近：" + best.name,
-          candidates: 1,
-          spreadCmPer100CssPx: 0,
-          cssW, cssH, dpr, isLikelyIPhone
+          confidence: bestScore < 8 ? "medium" : "low",
+          cssW, cssH, dpr
         };
       }
 
-      // Conservative generic fallback: physical pixels per CSS px divided by a common phone PPI.
-      // This is not as good as device matching, but is less wrong than 96px/in on many phones.
       const assumedPpi = dpr >= 3 ? 460 : 326;
       return {
         cmPerCssPx: dpr / assumedPpi * 2.54,
         method: "generic-dpr-ppi-fallback",
-        confidence: "低",
-        deviceName: `通用估算：DPR ${dpr}, assumed PPI ${assumedPpi}`,
-        candidates: 0,
-        spreadCmPer100CssPx: 0,
-        cssW, cssH, dpr, isLikelyIPhone
+        confidence: "low",
+        cssW, cssH, dpr
       };
     }
 
@@ -251,48 +151,23 @@
       return px * estimate.cmPerCssPx;
     }
 
-    function refreshDeviceInfo() {
-      estimate = estimateCmPerCssPx();
-      quality.textContent = `AUTO / ${estimate.confidence}`;
-      const pxPerCm = 1 / estimate.cmPerCssPx;
-      let note = `屏幕签名：${estimate.cssW}×${estimate.cssH} @${estimate.dpr}x｜${estimate.deviceName}｜1cm≈${pxPerCm.toFixed(1)} CSS px`;
-      if (estimate.method === "ambiguous-device-signature") {
-        note += `｜同签名候选：${estimate.candidates}，每 100 CSS px 最大差约 ${estimate.spreadCmPer100CssPx.toFixed(2)}cm`;
-      }
-      deviceInfo.textContent = note;
-      console.log("touch-trace-cm device estimate", estimate, {
-        screenWidth: window.screen.width,
-        screenHeight: window.screen.height,
-        innerWidth: window.innerWidth,
-        innerHeight: window.innerHeight,
-        visualViewportWidth: window.visualViewport?.width,
-        visualViewportHeight: window.visualViewport?.height,
-        dpr: window.devicePixelRatio,
-        platform: navigator.platform,
-        maxTouchPoints: navigator.maxTouchPoints,
-        userAgent: navigator.userAgent
-      });
-    }
-
     function resizeCanvas() {
       const dpr = window.devicePixelRatio || 1;
-      const w = Math.floor(window.innerWidth * dpr);
-      const h = Math.floor(window.innerHeight * dpr);
-      canvas.width = w;
-      canvas.height = h;
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
       canvas.style.width = window.innerWidth + "px";
       canvas.style.height = window.innerHeight + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       clearCanvas(false);
-      refreshDeviceInfo();
+      estimate = estimateCmPerCssPx();
+      console.log("touch-trace-cm estimate", estimate);
     }
 
     function clearCanvas(resetNumber = true) {
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
       if (resetNumber) {
         totalCssPx = 0;
-        cmText.textContent = "0.00";
-        statusText.textContent = "用手指在屏幕上划动。网页会自动根据设备屏幕参数估算厘米。";
+        updateNumber();
       }
     }
 
@@ -308,16 +183,16 @@
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
       ctx.lineTo(to.x, to.y);
-      ctx.strokeStyle = "rgba(247, 243, 234, 0.16)";
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
       ctx.lineWidth = 20;
-      ctx.shadowColor = "rgba(247, 243, 234, 0.25)";
+      ctx.shadowColor = "rgba(255, 255, 255, 0.23)";
       ctx.shadowBlur = 26;
       ctx.stroke();
 
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
       ctx.lineTo(to.x, to.y);
-      ctx.strokeStyle = "rgba(247, 243, 234, 0.92)";
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.90)";
       ctx.lineWidth = 5.5;
       ctx.shadowBlur = 0;
       ctx.stroke();
@@ -327,7 +202,9 @@
 
     function updateNumber() {
       const cm = cssPxToCm(totalCssPx);
-      cmText.textContent = cm.toFixed(2);
+      distanceText.textContent = `${Math.round(cm)}cm`;
+      // If you prefer one decimal place, use this instead:
+      // distanceText.textContent = `${cm.toFixed(1)}cm`;
     }
 
     function addPoint(currentPoint) {
@@ -362,7 +239,6 @@
       lastPoint = pointFromEvent(event);
       clearCanvas(false);
       updateNumber();
-      statusText.textContent = "正在记录：你的手指把一瞬间的触摸变成了一条可见的距离。";
     }, { passive: false });
 
     function handlePointerMove(event) {
@@ -384,25 +260,16 @@
       event.preventDefault();
       drawing = false;
       activePointerId = null;
-      statusText.textContent = `记录结束。免校准估算精度：${estimate.confidence}。再次触摸屏幕会开始新的轨迹。`;
     }
 
     canvas.addEventListener("pointerup", finishDrawing, { passive: false });
     canvas.addEventListener("pointercancel", finishDrawing, { passive: false });
 
-    resetButton.addEventListener("click", () => {
-      drawing = false;
-      activePointerId = null;
-      clearCanvas(true);
-    });
-
     window.addEventListener("resize", resizeCanvas);
-    window.visualViewport?.addEventListener("resize", () => {
-      // Address bar changes can affect canvas size; device estimate still uses screen size.
-      resizeCanvas();
-    });
+    window.visualViewport?.addEventListener("resize", resizeCanvas);
 
     resizeCanvas();
+    updateNumber();
   </script>
 </body>
 </html>
