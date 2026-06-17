@@ -36,10 +36,10 @@
       transform: translateX(-50%);
       z-index: 10;
       font-family: Helvetica, "Helvetica Neue", Arial, sans-serif;
-      font-size: clamp(22px, 6.2vw, 38px);
+      font-size: clamp(20px, 5.2vw, 34px);
       font-weight: 400;
       line-height: 1;
-      letter-spacing: 0.015em;
+      letter-spacing: 0.045em;
       font-variant-numeric: tabular-nums;
       color: rgba(255, 255, 255, 0.94);
       pointer-events: none;
@@ -57,37 +57,49 @@
     const ctx = canvas.getContext("2d");
     const distanceText = document.getElementById("distance");
 
-    // Device table: logical CSS size in portrait, actual physical pixels, PPI.
-    // This keeps the more accurate iPhone estimation from V2, but hides all diagnostic text.
-    const IOS_DEVICES = [
-      { name: "iPhone 16 Pro Max / 15 Pro Max / 15 Plus / 14 Pro Max", cssW: 430, cssH: 932, physW: 1290, physH: 2796, ppi: 460, dpr: 3 },
-      { name: "iPhone 16 Plus / 14 Plus / 13 Pro Max / 12 Pro Max", cssW: 428, cssH: 926, physW: 1284, physH: 2778, ppi: 458, dpr: 3 },
-      { name: "iPhone 16 Pro / 16 / 15 Pro / 15 / 14 Pro", cssW: 393, cssH: 852, physW: 1179, physH: 2556, ppi: 460, dpr: 3 },
-      { name: "iPhone 16e / 14 / 13 / 13 Pro / 12 / 12 Pro", cssW: 390, cssH: 844, physW: 1170, physH: 2532, ppi: 460, dpr: 3 },
-      { name: "iPhone 13 mini / 12 mini", cssW: 375, cssH: 812, physW: 1080, physH: 2340, ppi: 476, dpr: 3 },
-      { name: "iPhone 11 Pro / XS / X", cssW: 375, cssH: 812, physW: 1125, physH: 2436, ppi: 458, dpr: 3 },
-      { name: "iPhone 11 / XR", cssW: 414, cssH: 896, physW: 828, physH: 1792, ppi: 326, dpr: 2 },
-      { name: "iPhone 8 Plus / 7 Plus / 6s Plus / 6 Plus", cssW: 414, cssH: 736, physW: 1080, physH: 1920, ppi: 401, dpr: 3 },
-      { name: "iPhone SE 3 / SE 2 / 8 / 7 / 6s / 6", cssW: 375, cssH: 667, physW: 750, physH: 1334, ppi: 326, dpr: 2 },
-      { name: "iPhone SE 1 / 5s / 5", cssW: 320, cssH: 568, physW: 640, physH: 1136, ppi: 326, dpr: 2 }
+    // V3: multi-screen estimation.
+    // Instead of using one average CSS-pixel-to-cm value, this version estimates X and Y separately.
+    // This improves iPad / tablet accuracy and also avoids over-counting from pointerrawupdate.
+
+    const DEVICE_PROFILES = [
+      // Newer iPhones
+      { name: "iPhone 17 Pro Max", type: "iphone", cssW: 440, cssH: 956, physW: 1320, physH: 2868, ppi: 460, dpr: 3 },
+      { name: "iPhone Air", type: "iphone", cssW: 420, cssH: 912, physW: 1260, physH: 2736, ppi: 460, dpr: 3 },
+      { name: "iPhone 17 / 17 Pro / 16 Pro", type: "iphone", cssW: 402, cssH: 874, physW: 1206, physH: 2622, ppi: 460, dpr: 3 },
+      { name: "iPhone 16 Plus / 16 Pro Max / 15 Pro Max / 15 Plus", type: "iphone", cssW: 430, cssH: 932, physW: 1290, physH: 2796, ppi: 460, dpr: 3 },
+      { name: "iPhone 14 Plus / 13 Pro Max / 12 Pro Max", type: "iphone", cssW: 428, cssH: 926, physW: 1284, physH: 2778, ppi: 458, dpr: 3 },
+      { name: "iPhone 16 / 15 / 15 Pro / 14 Pro", type: "iphone", cssW: 393, cssH: 852, physW: 1179, physH: 2556, ppi: 460, dpr: 3 },
+      { name: "iPhone 17e / 16e / 14 / 13 / 12", type: "iphone", cssW: 390, cssH: 844, physW: 1170, physH: 2532, ppi: 460, dpr: 3 },
+      { name: "iPhone 13 mini / 12 mini", type: "iphone", cssW: 375, cssH: 812, physW: 1080, physH: 2340, ppi: 476, dpr: 3 },
+      { name: "iPhone 11 Pro / XS / X", type: "iphone", cssW: 375, cssH: 812, physW: 1125, physH: 2436, ppi: 458, dpr: 3 },
+      { name: "iPhone 11 / XR", type: "iphone", cssW: 414, cssH: 896, physW: 828, physH: 1792, ppi: 326, dpr: 2 },
+      { name: "iPhone 8 Plus / 7 Plus / 6 Plus", type: "iphone", cssW: 414, cssH: 736, physW: 1080, physH: 1920, ppi: 401, dpr: 3 },
+      { name: "iPhone SE / 8 / 7 / 6", type: "iphone", cssW: 375, cssH: 667, physW: 750, physH: 1334, ppi: 326, dpr: 2 },
+      { name: "iPhone SE 1 / 5", type: "iphone", cssW: 320, cssH: 568, physW: 640, physH: 1136, ppi: 326, dpr: 2 },
+
+      // iPad Pro / Air / standard iPad. Most large iPads use 264ppi @2x.
+      { name: "iPad Pro 13-inch M4 or newer", type: "ipad", cssW: 1032, cssH: 1376, physW: 2064, physH: 2752, ppi: 264, dpr: 2 },
+      { name: "iPad Pro 12.9-inch / iPad Air 13-inch", type: "ipad", cssW: 1024, cssH: 1366, physW: 2048, physH: 2732, ppi: 264, dpr: 2 },
+      { name: "iPad Pro 11-inch M4 or newer", type: "ipad", cssW: 834, cssH: 1210, physW: 1668, physH: 2420, ppi: 264, dpr: 2 },
+      { name: "iPad Pro 11-inch", type: "ipad", cssW: 834, cssH: 1194, physW: 1668, physH: 2388, ppi: 264, dpr: 2 },
+      { name: "iPad Pro 10.5-inch / iPad Air 3", type: "ipad", cssW: 834, cssH: 1112, physW: 1668, physH: 2224, ppi: 264, dpr: 2 },
+      { name: "iPad 10th/11th gen / iPad Air 11-inch", type: "ipad", cssW: 820, cssH: 1180, physW: 1640, physH: 2360, ppi: 264, dpr: 2 },
+      { name: "iPad 10.2-inch", type: "ipad", cssW: 810, cssH: 1080, physW: 1620, physH: 2160, ppi: 264, dpr: 2 },
+      { name: "iPad mini 6/7", type: "ipad", cssW: 744, cssH: 1133, physW: 1488, physH: 2266, ppi: 326, dpr: 2 },
+
+      // Same CSS signature, different physical size. Without calibration or model exposure this is inherently ambiguous.
+      { name: "iPad 9.7-inch", type: "ipad", cssW: 768, cssH: 1024, physW: 1536, physH: 2048, ppi: 264, dpr: 2 },
+      { name: "iPad mini 2/3/4/5", type: "ipad", cssW: 768, cssH: 1024, physW: 1536, physH: 2048, ppi: 326, dpr: 2 }
     ];
 
     let drawing = false;
     let lastPoint = null;
-    let totalCssPx = 0;
+    let totalCm = 0;
     let activePointerId = null;
-    let estimate = estimateCmPerCssPx();
+    let estimate = estimateScale();
 
     function round2(n) {
       return Math.round(n * 100) / 100;
-    }
-
-    function cmPerCssPxFromDevice(device) {
-      const widthCm = device.physW / device.ppi * 2.54;
-      const heightCm = device.physH / device.ppi * 2.54;
-      const byWidth = widthCm / device.cssW;
-      const byHeight = heightCm / device.cssH;
-      return (byWidth + byHeight) / 2;
     }
 
     function median(values) {
@@ -96,59 +108,106 @@
       return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     }
 
-    function estimateCmPerCssPx() {
-      const sw = Math.round(window.screen.width);
-      const sh = Math.round(window.screen.height);
-      const cssW = Math.min(sw, sh);
-      const cssH = Math.max(sw, sh);
-      const dpr = round2(window.devicePixelRatio || 1);
-      const ua = navigator.userAgent || "";
-      const isLikelyIPhone = /iPhone/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1 && cssW < 600);
-
-      const exact = IOS_DEVICES.filter(d =>
-        d.cssW === cssW &&
-        d.cssH === cssH &&
-        Math.abs(d.dpr - dpr) < 0.15
-      );
-
-      if (exact.length > 0) {
-        return {
-          cmPerCssPx: median(exact.map(cmPerCssPxFromDevice)),
-          method: exact.length === 1 ? "exact-device-signature" : "ambiguous-device-signature",
-          confidence: exact.length === 1 ? "high" : "medium",
-          cssW, cssH, dpr
-        };
-      }
-
-      if (isLikelyIPhone) {
-        let best = IOS_DEVICES[0];
-        let bestScore = Infinity;
-        for (const d of IOS_DEVICES) {
-          const score = Math.abs(d.cssW - cssW) + Math.abs(d.cssH - cssH) + Math.abs(d.dpr - dpr) * 100;
-          if (score < bestScore) {
-            best = d;
-            bestScore = score;
-          }
-        }
-        return {
-          cmPerCssPx: cmPerCssPxFromDevice(best),
-          method: "nearest-iphone-signature",
-          confidence: bestScore < 8 ? "medium" : "low",
-          cssW, cssH, dpr
-        };
-      }
-
-      const assumedPpi = dpr >= 3 ? 460 : 326;
+    function scaleFromProfile(profile) {
+      const widthCm = profile.physW / profile.ppi * 2.54;
+      const heightCm = profile.physH / profile.ppi * 2.54;
       return {
-        cmPerCssPx: dpr / assumedPpi * 2.54,
-        method: "generic-dpr-ppi-fallback",
-        confidence: "low",
-        cssW, cssH, dpr
+        cmPerCssX: widthCm / profile.cssW,
+        cmPerCssY: heightCm / profile.cssH
       };
     }
 
-    function cssPxToCm(px) {
-      return px * estimate.cmPerCssPx;
+    function averageScale(scales) {
+      return {
+        cmPerCssX: median(scales.map(s => s.cmPerCssX)),
+        cmPerCssY: median(scales.map(s => s.cmPerCssY))
+      };
+    }
+
+    function getScreenSignature() {
+      const sw = Math.round(window.screen.width || window.innerWidth);
+      const sh = Math.round(window.screen.height || window.innerHeight);
+      return {
+        cssW: Math.min(sw, sh),
+        cssH: Math.max(sw, sh),
+        dpr: round2(window.devicePixelRatio || 1)
+      };
+    }
+
+    function getDeviceHints(cssW) {
+      const ua = navigator.userAgent || "";
+      const platform = navigator.platform || "";
+      const maxTouchPoints = navigator.maxTouchPoints || 0;
+      const iOSLike = /iPhone|iPad|iPod/.test(ua) || (platform === "MacIntel" && maxTouchPoints > 1);
+      const iPhoneLike = /iPhone/.test(ua) || (iOSLike && cssW < 600);
+      const iPadLike = /iPad/.test(ua) || (platform === "MacIntel" && maxTouchPoints > 1 && cssW >= 600);
+      const androidLike = /Android/.test(ua);
+      const tabletLike = iPadLike || cssW >= 600;
+      return { iOSLike, iPhoneLike, iPadLike, androidLike, tabletLike };
+    }
+
+    function scoreProfile(profile, cssW, cssH, dpr) {
+      return Math.abs(profile.cssW - cssW) + Math.abs(profile.cssH - cssH) + Math.abs(profile.dpr - dpr) * 120;
+    }
+
+    function estimateScale() {
+      const { cssW, cssH, dpr } = getScreenSignature();
+      const hints = getDeviceHints(cssW);
+
+      let profiles = DEVICE_PROFILES;
+      if (hints.iPadLike) profiles = DEVICE_PROFILES.filter(p => p.type === "ipad");
+      else if (hints.iPhoneLike) profiles = DEVICE_PROFILES.filter(p => p.type === "iphone");
+
+      const exact = profiles.filter(p =>
+        Math.abs(p.cssW - cssW) <= 2 &&
+        Math.abs(p.cssH - cssH) <= 2 &&
+        Math.abs(p.dpr - dpr) < 0.15
+      );
+
+      if (exact.length > 0) {
+        const scale = averageScale(exact.map(scaleFromProfile));
+        return {
+          ...scale,
+          method: exact.length === 1 ? "exact-profile" : "ambiguous-profile",
+          confidence: exact.length === 1 ? "high" : "medium",
+          matches: exact.map(p => p.name),
+          cssW, cssH, dpr
+        };
+      }
+
+      if (hints.iOSLike) {
+        let best = profiles[0];
+        let bestScore = Infinity;
+        for (const p of profiles) {
+          const score = scoreProfile(p, cssW, cssH, dpr);
+          if (score < bestScore) {
+            best = p;
+            bestScore = score;
+          }
+        }
+        const scale = scaleFromProfile(best);
+        return {
+          ...scale,
+          method: "nearest-ios-profile",
+          confidence: bestScore < 16 ? "medium" : "low",
+          matches: [best.name],
+          cssW, cssH, dpr,
+          score: bestScore
+        };
+      }
+
+      // Generic fallback for Android / other tablets.
+      // Phones are usually high-density; tablets are often closer to 220-280ppi.
+      const assumedPpi = hints.tabletLike ? 264 : (dpr >= 3 ? 440 : dpr >= 2 ? 326 : 160);
+      const cmPerCss = dpr / assumedPpi * 2.54;
+      return {
+        cmPerCssX: cmPerCss,
+        cmPerCssY: cmPerCss,
+        method: hints.tabletLike ? "generic-tablet-fallback" : "generic-phone-fallback",
+        confidence: "low",
+        matches: [],
+        cssW, cssH, dpr
+      };
     }
 
     function resizeCanvas() {
@@ -159,20 +218,21 @@
       canvas.style.height = window.innerHeight + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       clearCanvas(false);
-      estimate = estimateCmPerCssPx();
-      console.log("touch-trace-cm estimate", estimate);
+      estimate = estimateScale();
+      window.__touchTraceEstimate = estimate;
+      console.log("touch-trace-cm V3 estimate", estimate);
     }
 
     function clearCanvas(resetNumber = true) {
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
       if (resetNumber) {
-        totalCssPx = 0;
+        totalCm = 0;
         updateNumber();
       }
     }
 
     function pointFromEvent(event) {
-      return { x: event.clientX, y: event.clientY, t: event.timeStamp };
+      return { x: event.clientX, y: event.clientY };
     }
 
     function drawSegment(from, to) {
@@ -201,9 +261,7 @@
     }
 
     function updateNumber() {
-      const cm = cssPxToCm(totalCssPx);
-      distanceText.textContent = `${cm.toFixed(2)}cm`;
-      // If you prefer one decimal place, use this instead:
+      distanceText.textContent = `${totalCm.toFixed(2)}cm`;
     }
 
     function addPoint(currentPoint) {
@@ -211,11 +269,20 @@
         lastPoint = currentPoint;
         return;
       }
+
       const dx = currentPoint.x - lastPoint.x;
       const dy = currentPoint.y - lastPoint.y;
-      const distance = Math.hypot(dx, dy);
-      if (distance < 0.25) return;
-      totalCssPx += distance;
+      const distanceCss = Math.hypot(dx, dy);
+
+      // Small touch noise can inflate length, especially on larger screens.
+      if (distanceCss < 0.45) return;
+
+      const segmentCm = Math.hypot(
+        dx * estimate.cmPerCssX,
+        dy * estimate.cmPerCssY
+      );
+
+      totalCm += segmentCm;
       drawSegment(lastPoint, currentPoint);
       lastPoint = currentPoint;
     }
@@ -234,25 +301,20 @@
       activePointerId = event.pointerId;
       canvas.setPointerCapture(activePointerId);
       drawing = true;
-      totalCssPx = 0;
+      totalCm = 0;
       lastPoint = pointFromEvent(event);
       clearCanvas(false);
       updateNumber();
     }, { passive: false });
 
-    function handlePointerMove(event) {
+    canvas.addEventListener("pointermove", (event) => {
       if (!drawing || event.pointerId !== activePointerId) return;
       event.preventDefault();
       for (const e of coalescedEvents(event)) {
         addPoint(pointFromEvent(e));
       }
       updateNumber();
-    }
-
-    canvas.addEventListener("pointermove", handlePointerMove, { passive: false });
-    if ("onpointerrawupdate" in window) {
-      canvas.addEventListener("pointerrawupdate", handlePointerMove, { passive: false });
-    }
+    }, { passive: false });
 
     function finishDrawing(event) {
       if (!drawing || event.pointerId !== activePointerId) return;
@@ -266,6 +328,7 @@
 
     window.addEventListener("resize", resizeCanvas);
     window.visualViewport?.addEventListener("resize", resizeCanvas);
+    window.addEventListener("orientationchange", () => setTimeout(resizeCanvas, 120));
 
     resizeCanvas();
     updateNumber();
