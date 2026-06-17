@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
   <title>指でなぞった距離</title>
-  <!-- V5 Japanese fixed: lang=ja, smaller/heavier distance text -->
+  <!-- V6: Japanese display + multi-stroke grouped measurement -->
   <style>
     :root { color-scheme: dark; }
 
@@ -30,7 +30,7 @@
       touch-action: none;
     }
 
-    #distance {
+   #distance {
       position: fixed;
       top: calc(22px + env(safe-area-inset-top));
       left: 50%;
@@ -100,6 +100,12 @@
     let activePointerId = null;
     let activePointerType = "touch";
     let estimate = estimateScale();
+
+    // 複数のストロークを「ひとまとまり」として数える時間。
+    // 例：1200 = 前の線を離してから1.2秒以内なら同じ計測として加算します。
+    // 数字を大きくすると、より長い間隔でも同じ計測になります。
+    const STROKE_GROUP_TIMEOUT_MS = 500;
+    let lastStrokeEndTime = 0;
 
     function round2(n) {
       return Math.round(n * 100) / 100;
@@ -223,7 +229,7 @@
       clearCanvas(false);
       estimate = estimateScale();
       window.__touchTraceEstimate = estimate;
-      console.log("指でなぞった距離 V5 推定値", estimate);
+      console.log("指でなぞった距離 V6 推定値", estimate);
     }
 
     function clearCanvas(resetNumber = true) {
@@ -325,15 +331,24 @@
     canvas.addEventListener("pointerdown", (event) => {
       if (!event.isPrimary) return;
       event.preventDefault();
+
+      const now = performance.now();
+      const shouldStartNewMeasurement =
+        lastStrokeEndTime === 0 ||
+        now - lastStrokeEndTime > STROKE_GROUP_TIMEOUT_MS;
+
+      if (shouldStartNewMeasurement) {
+        totalCm = 0;
+        clearCanvas(false);
+        updateNumber();
+      }
+
       activePointerId = event.pointerId;
       activePointerType = event.pointerType || "touch";
       canvas.setPointerCapture(activePointerId);
       drawing = true;
-      totalCm = 0;
       lastPoint = pointFromEvent(event);
       filteredPoint = lastPoint;
-      clearCanvas(false);
-      updateNumber();
     }, { passive: false });
 
     canvas.addEventListener("pointermove", (event) => {
@@ -351,6 +366,8 @@
       drawing = false;
       activePointerId = null;
       filteredPoint = null;
+      lastPoint = null;
+      lastStrokeEndTime = performance.now();
     }
 
     canvas.addEventListener("pointerup", finishDrawing, { passive: false });
