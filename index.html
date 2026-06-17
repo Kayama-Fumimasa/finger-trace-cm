@@ -57,7 +57,7 @@
     const ctx = canvas.getContext("2d");
     const distanceText = document.getElementById("distance");
 
-    // V3: multi-screen estimation.
+    // V4: multi-screen estimation + Apple Pencil over-count prevention.
     // Instead of using one average CSS-pixel-to-cm value, this version estimates X and Y separately.
     // This improves iPad / tablet accuracy and also avoids over-counting from pointerrawupdate.
 
@@ -94,8 +94,10 @@
 
     let drawing = false;
     let lastPoint = null;
+    let filteredPoint = null;
     let totalCm = 0;
     let activePointerId = null;
+    let activePointerType = "touch";
     let estimate = estimateScale();
 
     function round2(n) {
@@ -264,7 +266,25 @@
       distanceText.textContent = `${totalCm.toFixed(2)}cm`;
     }
 
-    function addPoint(currentPoint) {
+    function filteredPointForPen(rawPoint) {
+      // Apple Pencil is much more sensitive than a finger and can report tiny hand tremors.
+      // A light low-pass filter keeps the visual trace close while preventing noise from inflating length.
+      if (activePointerType !== "pen") return rawPoint;
+      if (!filteredPoint) {
+        filteredPoint = rawPoint;
+        return rawPoint;
+      }
+      const alpha = 0.72;
+      filteredPoint = {
+        x: filteredPoint.x + (rawPoint.x - filteredPoint.x) * alpha,
+        y: filteredPoint.y + (rawPoint.y - filteredPoint.y) * alpha
+      };
+      return filteredPoint;
+    }
+
+    function addPoint(rawPoint) {
+      const currentPoint = filteredPointForPen(rawPoint);
+
       if (!lastPoint) {
         lastPoint = currentPoint;
         return;
@@ -274,8 +294,10 @@
       const dy = currentPoint.y - lastPoint.y;
       const distanceCss = Math.hypot(dx, dy);
 
-      // Small touch noise can inflate length, especially on larger screens.
-      if (distanceCss < 0.45) return;
+      // Pen events are high-frequency and can contain micro jitter.
+      // The slightly larger threshold prevents Apple Pencil from counting tremor as distance.
+      const minStepCss = activePointerType === "pen" ? 1.15 : 0.45;
+      if (distanceCss < minStepCss) return;
 
       const segmentCm = Math.hypot(
         dx * estimate.cmPerCssX,
@@ -287,7 +309,11 @@
       lastPoint = currentPoint;
     }
 
-    function coalescedEvents(event) {
+    function eventsForDistance(event) {
+      // On iPadOS, Apple Pencil can provide a dense/coalesced event stream.
+      // For distance measurement this may over-count the same movement, so pen uses the dispatched event only.
+      if (event.pointerType === "pen") return [event];
+
       if (typeof event.getCoalescedEvents === "function") {
         const events = event.getCoalescedEvents();
         if (events && events.length) return events;
@@ -299,10 +325,12 @@
       if (!event.isPrimary) return;
       event.preventDefault();
       activePointerId = event.pointerId;
+      activePointerType = event.pointerType || "touch";
       canvas.setPointerCapture(activePointerId);
       drawing = true;
       totalCm = 0;
       lastPoint = pointFromEvent(event);
+      filteredPoint = lastPoint;
       clearCanvas(false);
       updateNumber();
     }, { passive: false });
@@ -310,7 +338,7 @@
     canvas.addEventListener("pointermove", (event) => {
       if (!drawing || event.pointerId !== activePointerId) return;
       event.preventDefault();
-      for (const e of coalescedEvents(event)) {
+      for (const e of eventsForDistance(event)) {
         addPoint(pointFromEvent(e));
       }
       updateNumber();
@@ -321,6 +349,7 @@
       event.preventDefault();
       drawing = false;
       activePointerId = null;
+      filteredPoint = null;
     }
 
     canvas.addEventListener("pointerup", finishDrawing, { passive: false });
