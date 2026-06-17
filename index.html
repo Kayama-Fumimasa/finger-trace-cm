@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="ja">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-  <title>Touch Trace CM</title>
+  <title>指でなぞった距離</title>
+  <!-- V5 Japanese fixed: lang=ja, smaller/heavier distance text -->
   <style>
     :root { color-scheme: dark; }
 
@@ -36,10 +37,10 @@
       transform: translateX(-50%);
       z-index: 10;
       font-family: Helvetica, "Helvetica Neue", Arial, sans-serif;
-      font-size: clamp(20px, 5.2vw, 34px);
-      font-weight: 400;
+      font-size: clamp(17px, 4.3vw, 28px);
+      font-weight: 500;
       line-height: 1;
-      letter-spacing: 0.045em;
+      letter-spacing: 0.07em;
       font-variant-numeric: tabular-nums;
       color: rgba(255, 255, 255, 0.94);
       pointer-events: none;
@@ -57,12 +58,12 @@
     const ctx = canvas.getContext("2d");
     const distanceText = document.getElementById("distance");
 
-    // V4: multi-screen estimation + Apple Pencil over-count prevention.
-    // Instead of using one average CSS-pixel-to-cm value, this version estimates X and Y separately.
-    // This improves iPad / tablet accuracy and also avoids over-counting from pointerrawupdate.
+    // V5: 複数画面対応 + Apple Pencil の過剰カウント防止。
+    // ひとつの平均値ではなく、X方向とY方向を分けてセンチ換算します。
+    // iPad / タブレットでの精度を上げ、pointerrawupdate による重複計算も避けます。
 
     const DEVICE_PROFILES = [
-      // Newer iPhones
+      // 新しい iPhone
       { name: "iPhone 17 Pro Max", type: "iphone", cssW: 440, cssH: 956, physW: 1320, physH: 2868, ppi: 460, dpr: 3 },
       { name: "iPhone Air", type: "iphone", cssW: 420, cssH: 912, physW: 1260, physH: 2736, ppi: 460, dpr: 3 },
       { name: "iPhone 17 / 17 Pro / 16 Pro", type: "iphone", cssW: 402, cssH: 874, physW: 1206, physH: 2622, ppi: 460, dpr: 3 },
@@ -77,7 +78,7 @@
       { name: "iPhone SE / 8 / 7 / 6", type: "iphone", cssW: 375, cssH: 667, physW: 750, physH: 1334, ppi: 326, dpr: 2 },
       { name: "iPhone SE 1 / 5", type: "iphone", cssW: 320, cssH: 568, physW: 640, physH: 1136, ppi: 326, dpr: 2 },
 
-      // iPad Pro / Air / standard iPad. Most large iPads use 264ppi @2x.
+      // iPad Pro / Air / 標準 iPad。大きい iPad の多くは 264ppi @2x。
       { name: "iPad Pro 13-inch M4 or newer", type: "ipad", cssW: 1032, cssH: 1376, physW: 2064, physH: 2752, ppi: 264, dpr: 2 },
       { name: "iPad Pro 12.9-inch / iPad Air 13-inch", type: "ipad", cssW: 1024, cssH: 1366, physW: 2048, physH: 2732, ppi: 264, dpr: 2 },
       { name: "iPad Pro 11-inch M4 or newer", type: "ipad", cssW: 834, cssH: 1210, physW: 1668, physH: 2420, ppi: 264, dpr: 2 },
@@ -87,7 +88,7 @@
       { name: "iPad 10.2-inch", type: "ipad", cssW: 810, cssH: 1080, physW: 1620, physH: 2160, ppi: 264, dpr: 2 },
       { name: "iPad mini 6/7", type: "ipad", cssW: 744, cssH: 1133, physW: 1488, physH: 2266, ppi: 326, dpr: 2 },
 
-      // Same CSS signature, different physical size. Without calibration or model exposure this is inherently ambiguous.
+      // CSS上のサイズが同じでも、実寸が異なる場合があります。校正や機種情報なしでは原理的に曖昧です。
       { name: "iPad 9.7-inch", type: "ipad", cssW: 768, cssH: 1024, physW: 1536, physH: 2048, ppi: 264, dpr: 2 },
       { name: "iPad mini 2/3/4/5", type: "ipad", cssW: 768, cssH: 1024, physW: 1536, physH: 2048, ppi: 326, dpr: 2 }
     ];
@@ -198,8 +199,8 @@
         };
       }
 
-      // Generic fallback for Android / other tablets.
-      // Phones are usually high-density; tablets are often closer to 220-280ppi.
+      // Android / その他タブレット向けの汎用フォールバック。
+      // スマートフォンは高密度、タブレットは 220〜280ppi に近いことが多いです。
       const assumedPpi = hints.tabletLike ? 264 : (dpr >= 3 ? 440 : dpr >= 2 ? 326 : 160);
       const cmPerCss = dpr / assumedPpi * 2.54;
       return {
@@ -222,7 +223,7 @@
       clearCanvas(false);
       estimate = estimateScale();
       window.__touchTraceEstimate = estimate;
-      console.log("touch-trace-cm V3 estimate", estimate);
+      console.log("指でなぞった距離 V5 推定値", estimate);
     }
 
     function clearCanvas(resetNumber = true) {
@@ -267,8 +268,8 @@
     }
 
     function filteredPointForPen(rawPoint) {
-      // Apple Pencil is much more sensitive than a finger and can report tiny hand tremors.
-      // A light low-pass filter keeps the visual trace close while preventing noise from inflating length.
+      // Apple Pencil は指より敏感で、小さな手ブレも拾いやすいです。
+      // 軽いローパスフィルターで見た目を保ちつつ、ノイズによる距離の増加を抑えます。
       if (activePointerType !== "pen") return rawPoint;
       if (!filteredPoint) {
         filteredPoint = rawPoint;
@@ -294,8 +295,8 @@
       const dy = currentPoint.y - lastPoint.y;
       const distanceCss = Math.hypot(dx, dy);
 
-      // Pen events are high-frequency and can contain micro jitter.
-      // The slightly larger threshold prevents Apple Pencil from counting tremor as distance.
+      // ペンのイベントは高頻度で、微細な揺れを含むことがあります。
+      // 少し大きめのしきい値で、手ブレを距離として数えにくくします。
       const minStepCss = activePointerType === "pen" ? 1.15 : 0.45;
       if (distanceCss < minStepCss) return;
 
@@ -310,8 +311,8 @@
     }
 
     function eventsForDistance(event) {
-      // On iPadOS, Apple Pencil can provide a dense/coalesced event stream.
-      // For distance measurement this may over-count the same movement, so pen uses the dispatched event only.
+      // iPadOS の Apple Pencil は高密度な coalesced event を返すことがあります。
+      // 距離計測では同じ動きを過剰に数える可能性があるため、ペンでは通常イベントのみを使います。
       if (event.pointerType === "pen") return [event];
 
       if (typeof event.getCoalescedEvents === "function") {
